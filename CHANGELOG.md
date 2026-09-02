@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-09-02
+
+- Let build.sh replace a root-owned app bundle
+- Fix a crash on profile switch, and make a chosen profile apply at once
+
+
 ## 1.0.0 — 2026-09-02
 
 - Skip the hardware checks when the firmware has the fans powered off
