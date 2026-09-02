@@ -74,6 +74,20 @@ public struct FanDemand {
     }
 }
 
+/// What the SMC reports a fan's control mode to be.
+public enum FanHardwareMode: Int, Hashable {
+    /// The firmware is driving the fan.
+    case auto = 0
+    /// We are driving the fan.
+    case manual = 1
+    /// The firmware has powered the fan down entirely, which it does whenever
+    /// the machine is cool enough. In this state the fan cannot be controlled at
+    /// all: writing `F<n>Md` is rejected by the SMC, and the `FOff` flag that
+    /// reports it is read-only. Verified on M4 Pro with nothing else running.
+    case off = 3
+    case unknown = -1
+}
+
 /// Live state of one physical fan.
 public struct FanState: Identifiable, Hashable {
     public let index: Int
@@ -81,8 +95,12 @@ public struct FanState: Identifiable, Hashable {
     public var targetRPM: Double
     public var minRPM: Double
     public var maxRPM: Double
-    public var hardwareIsManual: Bool
+    public var hardwareMode: FanHardwareMode
     public var id: Int { index }
+
+    public var hardwareIsManual: Bool { hardwareMode == .manual }
+    /// True when the firmware has powered this fan down and nothing can drive it.
+    public var isPoweredOff: Bool { hardwareMode == .off }
 
     public var name: String { "Fan \(index + 1)" }
 

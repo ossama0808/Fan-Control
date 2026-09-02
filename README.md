@@ -126,6 +126,19 @@ and whether the app appears in the menu bar, the Dock, or both. It will not let
 you hide both — that would leave it running and controlling your fans with no way
 to reach it.
 
+## A limitation worth knowing
+
+When your Mac is cool, macOS does not idle the fans — it **switches them off
+completely**. While they are off, no application can drive them. The SMC reports
+fan mode `3`, refuses to accept a manual-mode write, and the flag that reports
+the state is itself read-only. That is firmware behaviour, not something an app
+can work around, and it applies equally to every fan utility.
+
+So on a cool machine both profiles sit idle and the app says so plainly. The
+firmware starts the fans on its own once the machine warms up, and control
+resumes automatically from there. In practice this means Cool cannot hold its
+raised floor on a genuinely cold machine — there is nothing to hold.
+
 ## Is this safe?
 
 Short answer: yes, and it is hard to make it unsafe.

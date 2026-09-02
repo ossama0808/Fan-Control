@@ -221,7 +221,9 @@ public final class FanEngine: ObservableObject {
         fans = (0..<n).compactMap { i in
             guard let ac = try? smc.readDouble(SMCKey("F\(i)Ac")) else { return nil }
             let target = (try? smc.readDouble(SMCKey("F\(i)Tg"))) ?? 0
-            let manual = ((try? smc.readDouble(SMCKey("F\(i)Md"))) ?? 0) == 1
+            let rawMode = Int((try? smc.readDouble(SMCKey("F\(i)Md"))) ?? -1)
+            let mode = FanHardwareMode(rawValue: rawMode) ?? .unknown
+            let manual = mode == .manual
 
             // While the firmware holds a fan, its target IS the firmware's own
             // demand. Remembering the highest recent value costs nothing and
@@ -239,7 +241,7 @@ public final class FanEngine: ObservableObject {
                 index: i, currentRPM: ac, targetRPM: target,
                 minRPM: (try? smc.readDouble(SMCKey("F\(i)Mn"))) ?? 0,
                 maxRPM: (try? smc.readDouble(SMCKey("F\(i)Mx"))) ?? 0,
-                hardwareIsManual: manual
+                hardwareMode: mode
             )
         }
     }
@@ -284,17 +286,18 @@ public final class FanEngine: ObservableObject {
     private func applyModes() {
         guard helperStatus == .ready else { return }
 
-        // When the Mac is cool enough, the firmware powers the fans down
-        // completely — they report 0 rpm with a 0 target — and in that state the
-        // SMC rejects every fan write, including a request to hand control back.
-        // Verified on M4 Pro with nothing else running: writes return SMC result
-        // 130 until the firmware starts the fans again on its own.
+        // When the Mac is cool enough the firmware powers the fans down entirely
+        // and reports mode 3. Nothing can drive a fan in that state: writing
+        // F<n>Md returns SMC result 130, and the FOff flag that reports it is
+        // itself read-only (result 134). Verified on M4 Pro with nothing else
+        // running and the fans confirmed stopped.
         //
-        // There is nothing to fix and nothing to cool, so say so plainly rather
-        // than retrying into an error the user cannot act on. Control resumes by
-        // itself once the fans spin up.
-        if !fans.isEmpty, fans.allSatisfy({ $0.currentRPM == 0 && $0.targetRPM == 0 }) {
-            let reason = "Fans are off — the Mac is cool enough that the firmware stopped them"
+        // So this is not a failure to retry around; it is a state to wait out.
+        // The firmware starts the fans on its own once the machine warms, and
+        // normal control resumes on the next tick without anything to reset.
+        if !fans.isEmpty, fans.allSatisfy(\.isPoweredOff) {
+            let reason = "Fans are off — macOS powers them down when the Mac is cool, "
+                       + "and they cannot be controlled until it starts them again"
             if controlUnavailable != reason { controlUnavailable = reason }
             if lastError != nil { lastError = nil }
             return
