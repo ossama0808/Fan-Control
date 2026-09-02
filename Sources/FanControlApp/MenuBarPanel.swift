@@ -33,6 +33,13 @@ struct MenuBarPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if let note = statusNote {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(engine.lastError != nil || engine.backstopReason != nil
+                                     ? .orange : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Divider()
             fans
             Divider()
@@ -64,7 +71,17 @@ struct MenuBarPanel: View {
         if engine.helperStatus != .ready { return .red }
         if engine.backstopReason != nil { return .red }
         if engine.lastError != nil { return .orange }
+        if engine.controlUnavailable != nil { return .secondary }
         return .green
+    }
+
+    /// A short line explaining anything the dot alone cannot. A coloured dot with
+    /// no text leaves the user guessing why their fans are not moving.
+    private var statusNote: String? {
+        if engine.helperStatus != .ready { return "Helper not installed — sensors are read-only" }
+        if let b = engine.backstopReason { return "Thermal backstop: \(engine.label(forSensorID: b))" }
+        if let e = engine.lastError { return e }
+        return engine.controlUnavailable
     }
 
     private var header: some View {

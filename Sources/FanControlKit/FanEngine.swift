@@ -17,6 +17,10 @@ public final class FanEngine: ObservableObject {
     /// so the UI can answer "why is the fan at this speed".
     @Published public private(set) var dominantLeg: [Int: String] = [:]
     @Published public private(set) var backstopReason: String?
+    /// Set when the hardware will not accept fan commands at all, with a reason
+    /// fit to show a user. Distinct from `lastError`, which means something went
+    /// wrong; this is a normal state the machine puts itself in.
+    @Published public private(set) var controlUnavailable: String?
     @Published public private(set) var onACPower: Bool = true
 
     @Published public var modes: [Int: FanMode] = [:] {
@@ -279,6 +283,23 @@ public final class FanEngine: ObservableObject {
 
     private func applyModes() {
         guard helperStatus == .ready else { return }
+
+        // When the Mac is cool enough, the firmware powers the fans down
+        // completely — they report 0 rpm with a 0 target — and in that state the
+        // SMC rejects every fan write, including a request to hand control back.
+        // Verified on M4 Pro with nothing else running: writes return SMC result
+        // 130 until the firmware starts the fans again on its own.
+        //
+        // There is nothing to fix and nothing to cool, so say so plainly rather
+        // than retrying into an error the user cannot act on. Control resumes by
+        // itself once the fans spin up.
+        if !fans.isEmpty, fans.allSatisfy({ $0.currentRPM == 0 && $0.targetRPM == 0 }) {
+            let reason = "Fans are off — the Mac is cool enough that the firmware stopped them"
+            if controlUnavailable != reason { controlUnavailable = reason }
+            if lastError != nil { lastError = nil }
+            return
+        }
+        if controlUnavailable != nil { controlUnavailable = nil }
 
         let now = Date()
         var targets: [Int: Double] = [:]

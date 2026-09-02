@@ -17,6 +17,9 @@ struct MainWindowView: View {
                 if let err = engine.lastError {
                     Label(err, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange).font(.caption)
+                } else if let unavailable = engine.controlUnavailable {
+                    Label(unavailable, systemImage: "wind")
+                        .foregroundStyle(.secondary).font(.caption)
                 } else if engine.helperStatus != .ready {
                     Label("Helper not installed — read-only",
                           systemImage: "lock.fill")
