@@ -2,6 +2,12 @@ import SwiftUI
 import Charts
 import FanControlKit
 
+/// The running build's version, from the bundle.
+var appVersion: String {
+    let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    return short ?? "(unknown version)"
+}
+
 /// Shared heat ramp. One function so a colour means the same thing everywhere.
 func heatColor(_ celsius: Double) -> Color {
     switch celsius {
@@ -227,6 +233,10 @@ struct MenuBarPanel: View {
             }
             Spacer()
             Menu {
+                // Read from the bundle rather than hardcoded, so it can never
+                // disagree with the build the user is actually running.
+                Text("Fan Control \(appVersion)")
+                Divider()
                 Button("Open Fan Control…") {
                     // Order matters: the panel holds key focus while the app is
                     // NOT frontmost, so activating before dismissing leaves the
