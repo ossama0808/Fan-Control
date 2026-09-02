@@ -61,10 +61,22 @@ public extension Preset {
             // minimum when nothing is happening. Binding this to the hottest
             // core instead makes the fan chase single-core boost transients,
             // which is precisely the noise Smart exists to avoid.
-            .init(id: "cpu",       sensorID: "agg.cpuSustained", t0: 70, t1: 92, r0: 0, r1: 3800),
+            //
+            // Knees are on the SUSTAINED scale, which reads roughly 10-15 C
+            // below the hottest core. Measured on this machine: quiet idle 60,
+            // busy idle 64-71, sustained all-core load 71-82.
+            //
+            // 68/88 was tried first and was too timid to be worth running: it
+            // held 1717 rpm through a load where the firmware peaked at 90.7 C
+            // and Smart peaked at 91.3 C — quiet, but no cooler than Automatic,
+            // which is a profile with no reason to exist. 62/80 keeps a
+            // genuinely idle machine silent (60 is below the knee), a merely
+            // busy one near-silent at ~1600, and puts ~2600 rpm under real load
+            // where it can actually take heat out.
+            .init(id: "cpu",       sensorID: "agg.cpuSustained", t0: 62, t1: 80, r0: 0, r1: 3800),
             // A genuine peak still matters, so keep a second leg on the hottest
             // core with a threshold high enough that transients never reach it.
-            .init(id: "cpuPeak",   sensorID: "agg.cpu",       t0: 96, t1: 104, r0: 0, r1: 3800),
+            .init(id: "cpuPeak",   sensorID: "agg.cpu",       t0: 96, t1: 106, r0: 0, r1: 3800),
             .init(id: "soc",       sensorID: "agg.soc",       t0: 66, t1: 86, r0: 0, r1: 3600),
             .init(id: "gpu",       sensorID: "agg.gpu",       t0: 66, t1: 86, r0: 0, r1: 3600),
             .init(id: "memory",    sensorID: "agg.memory",    t0: 72, t1: 90, r0: 0, r1: 3400),
