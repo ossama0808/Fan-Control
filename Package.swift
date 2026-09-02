@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "SMCKitCore"),
+        .target(name: "FanControlKit", dependencies: ["SMCKitCore"]),
         .executableTarget(name: "smcwrite", dependencies: ["SMCKitCore"]),
     ]
 )
