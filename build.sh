@@ -59,8 +59,13 @@ codesign --force --sign - "$APP"
 if [ "${1:-}" != "--no-install" ]; then
     echo "==> installing to /Applications and restarting"
     pkill -f "Fan Control.app" 2>/dev/null && sleep 2
-    rm -rf "/Applications/$APP_NAME.app"
-    cp -R "$APP" /Applications/
+    # A copy installed by the .pkg is owned by root, so a plain rm fails and can
+    # leave the bundle half-deleted. Try unprivileged first, and fall back to one
+    # authenticated replace rather than corrupting what is already installed.
+    if ! rm -rf "/Applications/$APP_NAME.app" 2>/dev/null ||        ! cp -R "$APP" /Applications/ 2>/dev/null; then
+        echo "   (installed copy is root-owned — asking for authorisation)"
+        osascript -e "do shell script \"rm -rf '/Applications/$APP_NAME.app' && cp -R '$PWD/$APP' /Applications/ && chown -R $USER '/Applications/$APP_NAME.app'\" with administrator privileges" >/dev/null
+    fi
     open "/Applications/$APP_NAME.app"
     sleep 2
     if pgrep -f "Fan Control.app" >/dev/null; then
