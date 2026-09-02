@@ -116,7 +116,7 @@ struct FanEditorView: View {
 
     private var rpmRange: ClosedRange<Double> {
         guard let f = fan, f.maxRPM > f.minRPM else { return 1000...5000 }
-        return f.minRPM...f.maxRPM
+        return f.rpmRange
     }
 
     @ViewBuilder private var livePreview: some View {

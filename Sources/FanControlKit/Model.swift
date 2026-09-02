@@ -98,11 +98,31 @@ public struct FanState: Identifiable, Hashable {
     public var hardwareMode: FanHardwareMode
     public var id: Int { index }
 
+    public init(index: Int, currentRPM: Double, targetRPM: Double,
+                minRPM: Double, maxRPM: Double, hardwareMode: FanHardwareMode) {
+        self.index = index; self.currentRPM = currentRPM; self.targetRPM = targetRPM
+        self.minRPM = minRPM; self.maxRPM = maxRPM; self.hardwareMode = hardwareMode
+    }
+
     public var hardwareIsManual: Bool { hardwareMode == .manual }
     /// True when the firmware has powered this fan down and nothing can drive it.
     public var isPoweredOff: Bool { hardwareMode == .off }
 
     public var name: String { "Fan \(index + 1)" }
+
+    /// The fan's speed range, always well-formed.
+    ///
+    /// Never build a range directly from `minRPM...maxRPM`: those come from
+    /// separate SMC reads, and a single failed read yields 0, so a fan whose
+    /// minimum read fine and whose maximum did not gives `1350...0`. In Swift
+    /// that is not a bad value, it is an immediate trap that takes the whole app
+    /// down — and the moment a read is most likely to fail is exactly when the
+    /// user switches profile and the SMC is busiest.
+    public var rpmRange: ClosedRange<Double> {
+        let lo = Swift.min(minRPM, maxRPM)
+        let hi = Swift.max(minRPM, maxRPM)
+        return hi > lo ? lo...hi : lo...(lo + 1)
+    }
 
     /// 0…1 position of the current speed within the fan's physical range.
     public var loadFraction: Double {

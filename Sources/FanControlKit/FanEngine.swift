@@ -24,7 +24,18 @@ public final class FanEngine: ObservableObject {
     @Published public private(set) var onACPower: Bool = true
 
     @Published public var modes: [Int: FanMode] = [:] {
-        didSet { settings.saveModes(modes); applyModes() }
+        didSet {
+            settings.saveModes(modes)
+            // Forget the previous setpoint so the new mode applies at once.
+            //
+            // The ramp limiter exists to stop a *curve* surging audibly as its
+            // input moves; it should never sit between the user and a button
+            // they just pressed. Without this, choosing Full blast crawls from
+            // idle to maximum over 18 seconds and reads as "nothing happened".
+            lastCommanded.removeAll()
+            legHeldSince.removeAll()
+            applyModes()
+        }
     }
 
     @Published public var customPresets: [Preset] = [] {
@@ -46,6 +57,10 @@ public final class FanEngine: ObservableObject {
     private var backstopSince: Date?
     /// Highest demand the firmware itself was seen making, per fan.
     private var firmwareFloor: [Int: (rpm: Double, at: Date)] = [:]
+    /// Last known-good hardware limits per fan. An SMC read can fail
+    /// transiently; reusing the previous value is far better than publishing a
+    /// zero that every consumer then has to defend against.
+    private var lastGoodLimits: [Int: (min: Double, max: Double)] = [:]
 
     /// Non-temperature readings the profiles and panel use.
     /// PSTR is system power in watts, PDTR adapter power, BRSC battery percent.
@@ -237,10 +252,17 @@ public final class FanEngine: ObservableObject {
                 }
             }
 
+            let readMin = try? smc.readDouble(SMCKey("F\(i)Mn"))
+            let readMax = try? smc.readDouble(SMCKey("F\(i)Mx"))
+            var lo = readMin ?? 0, hi = readMax ?? 0
+            if hi > lo, lo > 0 {
+                lastGoodLimits[i] = (lo, hi)
+            } else if let good = lastGoodLimits[i] {
+                lo = good.min; hi = good.max
+            }
             return FanState(
                 index: i, currentRPM: ac, targetRPM: target,
-                minRPM: (try? smc.readDouble(SMCKey("F\(i)Mn"))) ?? 0,
-                maxRPM: (try? smc.readDouble(SMCKey("F\(i)Mx"))) ?? 0,
+                minRPM: lo, maxRPM: hi,
                 hardwareMode: mode
             )
         }
@@ -373,7 +395,7 @@ public final class FanEngine: ObservableObject {
                 }
             }
 
-            targets[fan.index] = rpm.clamped(to: fan.minRPM...fan.maxRPM)
+            targets[fan.index] = rpm.clamped(to: fan.rpmRange)
         }
 
         // Written every tick, unconditionally: the deadband governs whether the
@@ -451,9 +473,8 @@ public final class FanEngine: ObservableObject {
     public func applyPreset(_ preset: Preset) {
         var next = modes
         for fan in fans { next[fan.index] = adjust(preset.mode(for: fan), for: fan) }
-        modes = next
+        modes = next          // didSet clears the ramp state and applies at once
         settings.activePresetID = preset.id
-        legHeldSince.removeAll()
         start()   // re-clamp the poll interval if a profile just became active
     }
 

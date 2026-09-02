@@ -34,11 +34,17 @@ struct MenuBarPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if let note = statusNote {
-                Text(note)
-                    .font(.caption)
-                    .foregroundStyle(engine.lastError != nil || engine.backstopReason != nil
-                                     ? .orange : .secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: engine.controlUnavailable != nil
+                          ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.caption)
+                    Text(note).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.caption)
+                .foregroundStyle(engine.controlUnavailable != nil ? Color.secondary : Color.orange)
+                .padding(7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
             }
             Divider()
             fans
@@ -255,7 +261,7 @@ private struct FanTile: View {
                     .foregroundStyle(fan.hardwareIsManual ? .orange : .secondary)
                 Text(fan.name).font(.caption.weight(.medium))
                 Spacer()
-                Text(fan.hardwareIsManual ? "MANUAL" : "AUTO")
+                Text(fan.isPoweredOff ? "OFF" : (fan.hardwareIsManual ? "MANUAL" : "AUTO"))
                     .font(.system(size: 8, weight: .semibold))
                     .padding(.horizontal, 4).padding(.vertical, 1)
                     .background(fan.hardwareIsManual ? Color.orange.opacity(0.25) : Color.gray.opacity(0.2),
@@ -280,7 +286,7 @@ private struct FanTile: View {
             }
             .frame(height: 5)
 
-            Sparkline(values: samples, low: fan.minRPM, high: fan.maxRPM)
+            Sparkline(values: samples, low: fan.rpmRange.lowerBound, high: fan.rpmRange.upperBound)
                 .equatable()
                 .frame(height: 22)
 
@@ -440,7 +446,7 @@ struct Sparkline: View, Equatable {
                 LineMark(x: .value("t", i), y: .value("rpm", v))
                     .foregroundStyle(Color.accentColor)
             }
-            .chartYScale(domain: low...high)
+            .chartYScale(domain: Swift.min(low, high)...Swift.max(low, high + 1))
             .chartXAxis(.hidden).chartYAxis(.hidden)
         } else {
             Color.clear

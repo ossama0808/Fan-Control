@@ -117,6 +117,26 @@ func main() throws {
     assert(!SensorCatalog.isLive(95, group: .battery), "95C is not a plausible battery temp")
     print("✓ per-group plausibility bands")
 
+    // 1e2. A fan's range must be well-formed even when a hardware read failed.
+    // minRPM and maxRPM come from separate SMC reads; a single failure yields 0,
+    // and `1350...0` is not a bad value in Swift, it is an immediate trap that
+    // takes the app down. This is the guard against that.
+    let brokenHigh = FanState(index: 0, currentRPM: 0, targetRPM: 0,
+                              minRPM: 1350, maxRPM: 0, hardwareMode: .auto)
+    let brokenBoth = FanState(index: 0, currentRPM: 0, targetRPM: 0,
+                              minRPM: 0, maxRPM: 0, hardwareMode: .off)
+    let normal = FanState(index: 0, currentRPM: 2000, targetRPM: 2000,
+                          minRPM: 1350, maxRPM: 5777, hardwareMode: .manual)
+    for f in [brokenHigh, brokenBoth, normal] {
+        let r = f.rpmRange
+        assert(r.lowerBound <= r.upperBound,
+               "rpmRange must never be reversed (min \(f.minRPM), max \(f.maxRPM))")
+        // Must also be usable as a clamp target without trapping.
+        _ = 3000.0.clamped(to: r)
+    }
+    assert(normal.rpmRange == 1350...5777, "a healthy fan must keep its real range")
+    print("✓ fan range stays well-formed when a hardware read fails")
+
     // 1f. The backstop must sit above every profile ceiling, so "fans at
     // absolute maximum" stays an unambiguous fault signal.
     let maxLegCeiling = (Preset.smartLegs + Preset.coolLegs).map(\.r1).max() ?? 0
