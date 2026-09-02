@@ -6,5 +6,6 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "SMCKitCore"),
+        .executableTarget(name: "smcwrite", dependencies: ["SMCKitCore"]),
     ]
 )
