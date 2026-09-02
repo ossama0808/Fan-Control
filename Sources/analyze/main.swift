@@ -25,15 +25,33 @@ struct Sample {
 @MainActor
 func pump(_ s: TimeInterval) { RunLoop.main.run(until: Date().addingTimeInterval(s)) }
 
-func startLoad() -> [Process] {
-    (0..<ProcessInfo.processInfo.activeProcessorCount).map { _ in
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/yes")
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        try? p.run()
-        return p
+/// In-process load at userInteractive QoS.
+///
+/// Spawning `yes` processes does not work: children inherit the parent's
+/// background QoS, so the scheduler parks them on efficiency cores where they
+/// burn 1300% CPU while moving the die under 1 C and system power by 3 W. Real
+/// P-core load needs high-QoS threads in this process — measured effect is
+/// TCMb 71 -> 83 C and 31 -> 46 W. Threads also cannot leak the way stray child
+/// processes did, which silently poisoned earlier baselines.
+final class Burner {
+    private var stopped = false
+    private let lock = NSLock()
+    private func running() -> Bool { lock.lock(); defer { lock.unlock() }; return !stopped }
+    func start(_ n: Int) {
+        for _ in 0..<n {
+            let t = Thread {
+                var x = 0.0, i = 0.0
+                while self.running() {
+                    x += (i * 1.000001).squareRoot(); i += 1
+                    if i > 1e9 { i = 0 }
+                }
+                if x == .infinity { print("") }
+            }
+            t.qualityOfService = .userInteractive
+            t.start()
+        }
     }
+    func halt() { lock.lock(); stopped = true; lock.unlock() }
 }
 
 func mean(_ xs: [Double]) -> Double { xs.isEmpty ? 0 : xs.reduce(0,+) / Double(xs.count) }
@@ -50,7 +68,7 @@ func analyse(_ preset: Preset, seconds: Double, engine: FanEngine) -> [Sample] {
     let baseline = seconds * 0.25, load = seconds * 0.5
     var samples: [Sample] = []
     let start = Date()
-    var load_procs: [Process] = []
+    let burner = Burner()
     var loadStarted = false, loadStopped = false
 
     print("  time  phase     fan0  fan1  target |  cpu   soc   gpu  skinU skinL  bat |  W   driving")
@@ -58,10 +76,10 @@ func analyse(_ preset: Preset, seconds: Double, engine: FanEngine) -> [Sample] {
         let t = Date().timeIntervalSince(start)
         let phase = t < baseline ? "idle" : (t < baseline + load ? "LOAD" : "cool")
 
-        if phase == "LOAD" && !loadStarted { load_procs = startLoad(); loadStarted = true }
-        if phase == "cool" && !loadStopped {
-            load_procs.forEach { $0.terminate() }; loadStopped = true
+        if phase == "LOAD" && !loadStarted {
+            burner.start(ProcessInfo.processInfo.activeProcessorCount); loadStarted = true
         }
+        if phase == "cool" && !loadStopped { burner.halt(); loadStopped = true }
 
         pump(2)
         engine.refresh()
@@ -87,7 +105,7 @@ func analyse(_ preset: Preset, seconds: Double, engine: FanEngine) -> [Sample] {
                          s.cpu, s.soc, s.gpu, s.skinUp, s.skinLow, s.battery, s.watts, s.leg))
         }
     }
-    load_procs.forEach { $0.terminate() }
+    burner.halt()
     engine.applyPreset(.auto)
     pump(4)
     return samples
