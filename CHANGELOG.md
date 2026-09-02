@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 — 2026-09-02
+
+- Start fans that macOS has powered down
+
+
 ## 1.0.1 — 2026-09-02
 
 - Let build.sh replace a root-owned app bundle
