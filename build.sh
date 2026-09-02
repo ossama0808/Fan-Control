@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="Fan Control"
 BUNDLE_ID="com.local.fancontrol"
+VERSION="$(cat VERSION 2>/dev/null || echo 1.0.0)"
 DIST="dist"
 APP="$DIST/$APP_NAME.app"
 
@@ -31,7 +32,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>$APP_NAME</string>
     <key>CFBundleDisplayName</key><string>$APP_NAME</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
