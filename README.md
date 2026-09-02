@@ -1,173 +1,209 @@
 # Fan Control
 
-A native macOS fan and temperature utility for Apple Silicon, written in Swift/SwiftUI.
-Menu-bar app: live sensor dashboard, per-fan manual and sensor-based control,
-multi-input Smart and Cool profiles, and saved presets.
+A native macOS menu-bar app for reading every temperature sensor in your Mac and
+taking control of its fans. Swift and SwiftUI, no dependencies, ~2,400 lines.
 
-## Build and install
+<p align="center">
+  <img src="docs/panel.png" width="380" alt="The menu bar panel: fan tiles with sparklines, a thermal chart, temperature chips and a power strip">
+</p>
 
-```bash
-./build.sh                      # build, install to /Applications, restart
-sudo ./install-helper.sh        # once: installs the privileged fan-write helper
-```
+Apple's firmware is conservative: on the machine this was built for it holds both
+fans at their **minimum** while the CPU sits at **99 °C**, preferring to throttle
+rather than spin. That is a reasonable default for silence, and a poor one if you
+would rather your laptop stayed cool — or stayed cool *on your lap*.
 
-`build.sh` installs to `/Applications` and restarts the app, so the running app
-is always the build you just made. Pass `--no-install` to build without touching
-the running app — needed before `swift run selftest` or `swift run analyze`,
-which drive the same fans and will fight it.
+## What it gives you
 
-## Profiles
+- **Live sensors.** ~300 of them, grouped by what they physically measure —
+  CPU, GPU, SoC, memory, power delivery, SSD, battery, and the top and bottom
+  case surfaces.
+- **Two smart profiles.** `Smart` keeps the machine cool without being noisy.
+  `Cool` keeps it cool, full stop.
+- **Manual control.** Fix a fan at an RPM, or map any sensor onto a speed range.
+- **Presets.** Save your own and switch from the menu bar.
 
-Two built-in profiles evaluate several inputs at once and run the fan at
-whichever is closest to trouble. They answer different questions, and the
-difference is noise.
+## Install
 
-**Smart — cool without being noisy.** The everyday choice. What makes it smart
-is not a higher threshold but an earlier, gentler one: heat that is never allowed
-to accumulate never has to be removed in a hurry. A curve that starts at 70 C and
-rises slowly holds a lower steady-state temperature than one that waits for 88 C
-and then has to shout. Its ceilings are capped at 3800 rpm — roughly the lower
-half of the fan's range — so it can run constantly without ever becoming the
-loudest thing in the room, and every leg falls back to the fan minimum so it is
-silent at idle.
+**Download the installer** from [Releases](../../releases/latest) and open it.
+It installs the app to `/Applications`, sets up the small privileged helper that
+fan control requires, and launches the app.
 
-**Cool — cool, unconditionally.** Louder, and meant to be. Every leg starts
-earlier, rises faster and is allowed further than its Smart counterpart, and it
-holds a 2400 rpm floor on AC even when every input is cold. Skin knees sit only
-a couple of degrees above a comfortable idle, so it starts working before the
-case is warm rather than after.
+> The package is not notarized (that needs a paid Apple Developer account), so
+> macOS will warn you the first time. Right-click the `.pkg` and choose **Open**,
+> or allow it under **System Settings → Privacy & Security**.
 
-Cool's demand is greater than Smart's at every point in the input space. That is
-not an assumption — the self-test sweeps 552 temperature/power combinations and
-asserts it, with the tightest observed margin printed.
-
-Both watch CPU, SoC, GPU, memory, power delivery, SSD, battery and both skin
-surfaces. The point of the extra legs is the cases a CPU curve is structurally
-blind to: a sustained multi-hundred-GB write heats the NAND with almost no
-compute, and charging heats the battery with none at all. On an idle-but-charging
-machine the leg actually driving the fans is usually `battery`, not `cpu`.
-
-Every knee is set against measurement rather than taste. The governing one:
-across ~380 s spanning a CPU hot-point of 98.9 C, the firmware never raised
-either fan above its minimum. Apple's firmware prefers to soak and throttle, so a
-knee at 70 C is already well ahead of it. `FanEngine` additionally records the
-firmware's own demand while a fan is on auto and treats it as a hard lower bound,
-so no profile can ever command less air than auto would have.
-
-A thermal backstop sits above every profile: if any group exceeds its limit for
-5 consecutive seconds the fans go to maximum. No profile leg reaches the fan's
-true ceiling, so "fans at absolute maximum" stays an unambiguous fault signal.
-
-## Measuring a profile
+<details>
+<summary>Or build from source</summary>
 
 ```bash
-./build.sh --no-install      # keep the app stopped
-swift run analyze all 180    # or: analyze smart 180
+git clone https://github.com/ossama0808/Fan-Control.git
+cd Fan-Control
+./build.sh                 # builds, installs to /Applications, launches
+sudo ./install-helper.sh   # once: installs the privileged fan helper
 ```
 
-Runs each profile through 25% idle, 50% all-core load, 25% recovery, and reports
-mean and peak fan speed, temperatures, skin temperatures and which leg was
-driving. Idle numbers prove nothing about a fan curve, which is why the load
-phase exists. Quit the app first; it drives the same fans.
+Needs Xcode command line tools. `./build.sh --no-install` builds without
+touching the running app.
+</details>
 
-## Running the checks
+## Supported Macs
 
-```bash
-swift run selftest
-```
+**Apple Silicon Macs that have fans**, on **macOS 14 (Sonoma) or later**:
 
-Quit the app first. The self-test drives the fans directly, so with the app also
-running you get two writers fighting over the same SMC keys and confusing
-failures that look like the assertion loop breaking. The same applies to any
-other fan utility — only one thing can own the fans at a time.
-
-## How it is put together
-
-| Component | Role |
+| | |
 |---|---|
-| `Sources/SMCKitCore` | The AppleSMC user-client ABI: key enumeration, typed read/write, codecs for `flt`/`sp78`/`fpe2`/`fp88`/`ui8`…`ui32`/`si8`/`si16`/`flag` |
-| `Sources/FanControlKit` | Sensor catalog and grouping, fan modes and curve maths, preset storage, settings, helper client |
-| `Sources/smcwrite` | The only code that runs as root. Writes fan keys and nothing else |
-| `Sources/FanControlApp` | SwiftUI menu-bar app, main window, fan editor, preferences |
-| `Sources/analyze` | Profile analyser: drives a profile through idle/load/recover and reports what it actually did |
-| `Sources/selftest` | Runnable checks: curve and multi-leg maths, profile invariants, fake-sensor rejection, plus live hardware hold and profile tests |
+| MacBook Pro 14" / 16" | M1/M2/M3/M4, all Pro and Max variants — 2 fans |
+| MacBook Pro 13" | M1, M2 — 1 fan |
+| Mac mini | M1, M2, M2 Pro, M4, M4 Pro — 1 fan |
+| Mac Studio | M1/M2/M3/M4 Max and Ultra — 2 fans |
+| Mac Pro | M2 Ultra — 3 fans |
+| iMac 24" | M1, M3, M4 |
 
-Reading sensors needs no privilege. Only writing a fan target does, so that one
-operation lives in a separate ~110 KB setuid-root binary.
+**MacBook Air has no fans**, so there is nothing for the app to control. It will
+still show you every temperature sensor.
 
-## Three things that are easy to get wrong
+**Intel Macs are not supported.** The sensor classification and both profiles are
+built around Apple Silicon's sensor layout and will not map correctly.
 
-**1. A manual fan target is not self-sustaining, and not self-clearing either.**
+> Developed and verified on a MacBook Pro (Mac16,7, M4 Pro) running macOS 26.
+> Other Apple Silicon Macs should work — the app reads the fan count and each
+> fan's real RPM range from the hardware rather than assuming — but they are
+> untested. If yours misbehaves, please open an issue with the model.
 
-Set a target once and it can silently stop applying: at mid-range targets the
-SMC hands the fan back to the firmware roughly two seconds after the last
-write, while the UI still reports manual control. The app therefore re-asserts
-every managed fan every 0.5 s (`FanEngine.assertInterval`), batched into a
-single privileged call per tick.
+## Using it
 
-Measured on M4 Pro, one write of 2600 rpm at t=0: still `MANUAL` at t=1 s,
-released by t=2 s, firmware target restored by t=3 s. This is time-based, not
-connection-scoped — holding the writing SMC connection open across the timeout
-changes nothing — so a one-shot helper process suffices and no resident root
-daemon is needed.
+### The menu bar
 
-But the reverse is **not** guaranteed. A fan commanded to its maximum on a hot
-machine has been observed holding `MANUAL` indefinitely with no writer alive at
-all (>20 s after the controlling process was killed). Never assume an abandoned
-fan will free itself. The app releases fans explicitly:
+The status item shows a live temperature and fan speed. Click it for the panel
+above: both fans with speed, duty and a two-minute sparkline; a thermal chart
+with a throttle line; temperature chips; system and adapter power; and a rollup
+of every live sensor. The buttons at the bottom switch profile instantly.
 
-- on Quit, via `applicationWillTerminate`
-- on `SIGTERM`/`SIGINT`/`SIGHUP`, via signal sources — AppKit does not run the
-  delegate for these, so without them `pkill` leaves fans pinned
-- on the next launch, by releasing any fan the hardware reports as manual while
-  its configured mode is auto, which recovers from a `SIGKILL`
+### Profiles
 
-`SIGKILL` cannot be caught, so it can still strand fans until the app is
-relaunched. `sudo /usr/local/libexec/fancontrol-smcwrite auto-all` clears it
-from a terminal.
+| | |
+|---|---|
+| **Automatic** | Hands the fans back to Apple's firmware. |
+| **Smart** | Cool without being noisy. The everyday choice. |
+| **Cool** | Cool, unconditionally. Audible on purpose. |
+| **Full blast** | Every fan at maximum. |
 
-**2. Published sensor labels can be wrong; measure instead.**
+What makes **Smart** smart is not a higher threshold but an *earlier, gentler*
+one. Heat that is never allowed to accumulate never has to be removed in a hurry,
+so a curve that starts early and rises slowly holds a lower steady temperature
+than one that waits and then has to shout. Its ceiling is capped well below the
+fan's range, and every input falls back to the fan's minimum, so it is silent
+when the machine is idle and never becomes the loudest thing in the room.
 
-`Ts0P`/`Ts1P` are widely published as "SSD Controller". They are not. Under 88 s
-of sustained NAND writes that moved the real NAND sensor +3.4 C they moved
-+0.03 C, and under a 120 s all-core burn that moved the die +23.7 C they moved
-+0.37 C. They respond to neither, only to accumulated whole-machine energy, with
-94% monotonic behaviour and a still-rising curve 150 s after load ended. They are
-top-case skin sensors, and they are what the Cool profile binds to.
+**Cool** makes the opposite trade deliberately. Every input starts earlier and
+rises harder, and it holds a raised floor on AC power even when everything is
+cold. It also runs a *feed-forward* term on system power draw, because skin
+temperature cannot be regulated reactively: the top case has roughly a 92-second
+time constant and keeps climbing after the load that caused it has stopped.
+Power draw leads skin temperature by about 40 seconds, so Cool starts spinning
+before the case is warm rather than a minute after.
 
-Two corollaries that bit an earlier version of this catalogue: the `Ta*` family
-is NOT room air — its hottest member peaked at 59 C and rose 12 C under load, so
-binding "keep the case cool" to an "ambient" group tracked the SoC instead. And
-six `Ta*` keys report exactly 9.10 forever; a power-gated core cluster can report
-exactly 40.00 across fifty keys at once. Both sit inside any sane temperature
-band. They are rejected structurally — bit-identical agreement across siblings on
-a round number — rather than by a key blocklist, so it keeps working on hardware
-nobody has characterised.
+Both profiles watch CPU, SoC, GPU, memory, power delivery, SSD, battery and both
+case surfaces, and run the fans at whichever input is closest to trouble — so a
+sustained disk write or a charging battery raises the fans even with an idle CPU.
+Those are cases a CPU-only curve is structurally blind to.
 
-**3. Core sensors go dead when clusters power-gate.**
-Of 322 `T*` keys, ~244 read plausibly at any moment, but *which* ones changes:
-idle P-core clusters report near zero. Binding a fan curve to a single raw core
-key gives you garbage the moment that core parks. Bind to an aggregate
-("CPU (hottest core)") — the max over currently-live sensors in a group.
-Readings outside 1–125 °C are treated as not reporting.
+### The main window
 
-A sensor-based curve whose sensor cannot be read commands **maximum** RPM
-rather than minimum: failing loud is the only safe direction for a thermal
-control loop.
+<p align="center">
+  <img src="docs/window.png" width="720" alt="Main window: grouped sensor list on the left, fan cards on the right">
+</p>
 
-## Security note
+Every sensor, grouped, with computed aggregates at the top. On the right, each
+fan with its live speed, target and hardware range. **Change…** opens per-fan
+control: automatic, a fixed RPM, or a custom curve between any sensor and a speed
+range, with a live preview of the resulting speed.
 
-The helper is setuid root. Its argument parser accepts a fan index and an RPM
-value only, clamped to that fan's own hardware min/max read back from the SMC
-at write time. It cannot be used to write arbitrary SMC keys, so a compromised
-or impersonating local process gains nothing beyond changing fan speed.
+### Preferences
 
-(For comparison, the commercial app this was modelled on exposes a general
-"write any SMC key" operation over XPC from its root helper.)
+Fahrenheit, decimal places, poll rate, what the menu bar shows, launch at login,
+and whether the app appears in the menu bar, the Dock, or both. It will not let
+you hide both — that would leave it running and controlling your fans with no way
+to reach it.
 
-## Not implemented
+## Is this safe?
 
-- Localization (the original ships ~40 languages; this is English only)
-- SMART temperatures for external/USB drives — internal SSD temps come from
-  the SMC and are shown
-- Update checker, licensing, uninstaller
+Short answer: yes, and it is hard to make it unsafe.
+
+- **A profile can never cool less than Apple's firmware would.** The app records
+  the firmware's own fan demand whenever a fan is on automatic and treats it as a
+  hard lower bound on everything it commands.
+- **A thermal backstop sits above every profile.** If any component exceeds its
+  limit for five seconds straight, the fans go to maximum. No profile ever uses
+  the top of the fan's range, so "fans at absolute maximum" is an unambiguous
+  fault signal rather than a normal state.
+- **Fans are released when the app exits** — on quit, and on signals, which
+  AppKit does not handle for you. If the app is force-killed, the next launch
+  detects fans still held in manual mode and releases them.
+- **A dead sensor fails loud.** A curve whose sensor cannot be read commands
+  maximum, never minimum.
+- Nothing is overclocked and no limits are raised. The app only ever asks a fan
+  to spin at a speed within the range the hardware itself reports.
+
+## Security
+
+Reading sensors needs no privilege. Writing a fan speed needs root, so that one
+operation lives in a separate ~120 KB setuid helper. It accepts a fan index and
+an RPM value and nothing else, clamped to that fan's own hardware limits read
+back at write time — it cannot be used to write arbitrary SMC registers, even if
+invoked directly.
+
+The app is ad-hoc signed and not notarized. You can read every line of what runs
+as root in [`Sources/smcwrite/main.swift`](Sources/smcwrite/main.swift) — it is
+under 100 lines.
+
+## How it works
+
+The System Management Controller exposes a few thousand keys over an IOKit user
+client. The app enumerates them, decodes the value types, and writes `F<n>Md` and
+`F<n>Tg` to take a fan off automatic and hold a target speed.
+
+Three findings shaped the design, all measured rather than assumed:
+
+**Manual fan mode is a lease that expires.** Write a target once and the SMC hands
+the fan back to firmware about two seconds later, silently, while your UI still
+says "manual". Every managed fan is re-asserted twice a second. The lease is not
+tied to the SMC connection — holding it open across the timeout changes nothing —
+which is why no root daemon is needed.
+
+**It does not reliably expire, either.** A fan commanded to maximum on a hot
+machine has held manual mode for over twenty seconds with no process alive to
+maintain it. Fans are released explicitly rather than left to lapse.
+
+**Published sensor labels can be wrong.** `Ts0P`/`Ts1P` are widely documented as
+SSD controller sensors. Under sustained writes that moved the real NAND sensor
++3.4 °C they moved +0.03 °C; under an all-core burn that moved the die +23.7 °C
+they moved +0.37 °C. They are top-case skin sensors, and they are what the Cool
+profile binds to.
+
+## Development
+
+```bash
+swift build
+swift run selftest          # curve maths, profile invariants, live hardware checks
+swift run analyze all 180   # drive each profile through idle/load/recover
+```
+
+Quit the app first — it drives the same fans and two writers will fight.
+
+`analyze` runs each profile through 25% idle, 50% all-core load and 25% recovery
+and reports mean and peak fan speed, temperatures and which input was driving.
+Idle numbers prove nothing about a fan curve, which is why the load phase exists.
+
+### Releasing
+
+```bash
+./release.sh 1.1.0
+```
+
+Runs the checks, builds the installer, writes the notes into `CHANGELOG.md`,
+tags, pushes, and publishes a GitHub release with the `.pkg` attached.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
