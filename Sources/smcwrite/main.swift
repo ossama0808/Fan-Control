@@ -40,12 +40,61 @@ func write(_ key: String, _ value: Double) throws {
     try smc.writeRaw(k, bytes: bytes)
 }
 
+/// Bring the fans out of the firmware's powered-down state.
+///
+/// When the Mac is cool the firmware switches the fans off entirely and reports
+/// mode 3. In that state `F<n>Md` is not writable — every attempt returns SMC
+/// result 130, in any order and however many times it is retried.
+///
+/// Writing `Ftst` releases them. Traced from a known-good implementation and
+/// then reproduced from scratch: a single `Ftst = 1` moves the fan out of mode 3
+/// and the firmware spins it up. (`Frqd` looks like the matching control but is
+/// read-only, result 134.)
+///
+/// Returns true if it had to wake the fans, because the caller must then expect
+/// the mode write to fail. The firmware does not accept one until it has the
+/// fans actually turning, which measures around six seconds — far too long to
+/// block here. The caller re-asserts twice a second, so the tick that lands
+/// after the fans are up takes control with nothing extra to do.
+@discardableResult
+func releaseFansFromStandby() -> Bool {
+    let off = (0..<fanCount()).contains { i in
+        ((try? smc.readDouble(SMCKey("F\(i)Md"))) ?? 0) == 3
+    }
+    guard off else { return false }
+    try? smc.writeRaw(SMCKey("Ftst"), bytes: [1])
+    return true
+}
+
+/// Hand the fans back, including the ability to switch themselves off.
+///
+/// Leaving `Ftst` set keeps them turning at their minimum forever, so a cool
+/// machine would never go quiet again. Only cleared once nothing is being
+/// driven, so releasing one fan does not strand another.
+func restoreStandbyIfIdle() {
+    let anyManual = (0..<fanCount()).contains { i in
+        ((try? smc.readDouble(SMCKey("F\(i)Md"))) ?? 0) == 1
+    }
+    guard !anyManual else { return }
+    try? smc.writeRaw(SMCKey("Ftst"), bytes: [0])
+}
+
 func setFan(_ i: Int, rpm: Double, quiet: Bool = false) throws {
     let lo = try smc.readDouble(SMCKey("F\(i)Mn"))
     let hi = try smc.readDouble(SMCKey("F\(i)Mx"))
     let clamped = min(max(rpm, lo), hi)
-    try write("F\(i)Md", 1)          // manual mode
-    try write("F\(i)Tg", clamped)    // target rpm
+    let waking = releaseFansFromStandby()
+    do {
+        try write("F\(i)Md", 1)          // manual mode
+        try write("F\(i)Tg", clamped)    // target rpm
+    } catch {
+        // Expected for a few seconds after waking the fans; not a failure.
+        if waking {
+            if !quiet { print("fan \(i) -> waking (firmware is spinning it up)") }
+            return
+        }
+        throw error
+    }
     if !quiet {
         print(String(format: "fan %d -> manual %.0f rpm (clamped to %.0f..%.0f)", i, clamped, lo, hi))
     }
@@ -53,6 +102,7 @@ func setFan(_ i: Int, rpm: Double, quiet: Bool = false) throws {
 
 func autoFan(_ i: Int) throws {
     try write("F\(i)Md", 0)
+    restoreStandbyIfIdle()
     print("fan \(i) -> auto")
 }
 

@@ -81,9 +81,9 @@ public enum FanHardwareMode: Int, Hashable {
     /// We are driving the fan.
     case manual = 1
     /// The firmware has powered the fan down entirely, which it does whenever
-    /// the machine is cool enough. In this state the fan cannot be controlled at
-    /// all: writing `F<n>Md` is rejected by the SMC, and the `FOff` flag that
-    /// reports it is read-only. Verified on M4 Pro with nothing else running.
+    /// the machine is cool enough. `F<n>Md` is not writable in this state, but
+    /// the fan is not unreachable: writing `Ftst` wakes it, after which normal
+    /// control works. The helper does that automatically.
     case off = 3
     case unknown = -1
 }

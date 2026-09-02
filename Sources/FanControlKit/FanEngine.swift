@@ -309,22 +309,23 @@ public final class FanEngine: ObservableObject {
         guard helperStatus == .ready else { return }
 
         // When the Mac is cool enough the firmware powers the fans down entirely
-        // and reports mode 3. Nothing can drive a fan in that state: writing
-        // F<n>Md returns SMC result 130, and the FOff flag that reports it is
-        // itself read-only (result 134). Verified on M4 Pro with nothing else
-        // running and the fans confirmed stopped.
+        // and reports mode 3, in which `F<n>Md` is not writable. That is not the
+        // end of it: writing `Ftst` wakes them, which the helper does. The
+        // firmware then needs a few seconds of spin-up before it accepts a mode
+        // write, so the first ticks after waking fail harmlessly and the one
+        // that lands afterwards takes control.
         //
-        // So this is not a failure to retry around; it is a state to wait out.
-        // The firmware starts the fans on its own once the machine warms, and
-        // normal control resumes on the next tick without anything to reset.
-        if !fans.isEmpty, fans.allSatisfy(\.isPoweredOff) {
-            let reason = "Fans are off — macOS powers them down when the Mac is cool, "
-                       + "and they cannot be controlled until it starts them again"
-            if controlUnavailable != reason { controlUnavailable = reason }
-            if lastError != nil { lastError = nil }
-            return
-        }
-        if controlUnavailable != nil { controlUnavailable = nil }
+        // So do NOT skip the write here — skipping is what left a chosen profile
+        // inert on a cool machine, with the fans staying off no matter what the
+        // user picked. Just describe the state accurately while it resolves.
+        let allOff = !fans.isEmpty && fans.allSatisfy(\.isPoweredOff)
+        let wantsControl = fans.contains { !(modes[$0.index] ?? .auto).isAuto }
+        let note: String? = allOff
+            ? (wantsControl
+               ? "Starting the fans — macOS had powered them down, this takes a few seconds"
+               : "Fans are off — macOS powers them down when the Mac is cool")
+            : nil
+        if note != controlUnavailable { controlUnavailable = note }
 
         let now = Date()
         var targets: [Int: Double] = [:]

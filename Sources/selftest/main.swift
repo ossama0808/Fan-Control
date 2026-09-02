@@ -153,14 +153,19 @@ func main() throws {
         return
     }
     guard let fan = engine.fans.first else { print("! no fans"); return }
-    // A cool Mac has its fans powered off by the firmware, and nothing can drive
-    // them in that state. Skip rather than fail: the release script gates on
-    // this test, and a cold machine is not a broken build.
-    guard !engine.fans.allSatisfy(\.isPoweredOff) else {
-        print("! fans are powered off by the firmware (mode 3) — skipping hardware checks.")
-        print("  Warm the machine up and re-run to exercise them.")
-        print("\nLOGIC CHECKS PASSED (hardware checks skipped)")
-        return
+    // A cool Mac has its fans powered off, and the firmware needs a few seconds
+    // to spin them up once woken, so give it that before judging anything.
+    if engine.fans.allSatisfy(\.isPoweredOff) {
+        print("fans are powered off — waking them (this is the Ftst path)…")
+        engine.setMode(.constant(rpm: fan.minRPM + 400), for: fan.index)
+        var woke = false
+        for _ in 0..<30 {
+            pump(1); engine.refresh()
+            if !engine.fans.allSatisfy(\.isPoweredOff) { woke = true; break }
+        }
+        assert(woke, "could not wake the fans out of standby within 30s")
+        pump(4)   // let the firmware finish spinning up before commanding
+        print("✓ woke the fans from the firmware's powered-down state")
     }
 
     let target = min(fan.minRPM + 900, fan.maxRPM)
@@ -216,7 +221,14 @@ func main() throws {
     // tables, aggregate lookup and helper path are all wired together.
     for preset in [Preset.smart, Preset.cool] {
         engine.applyPreset(preset)
-        pump(4)
+        // The fans may have powered down again since the last check, and waking
+        // them takes several seconds. Wait for actual control rather than
+        // asserting against a fan that is still spinning up.
+        for _ in 0..<25 {
+            pump(1); engine.refresh()
+            if engine.fans.allSatisfy(\.hardwareIsManual) { break }
+        }
+        pump(3)
         engine.refresh()
         let rpm = engine.fans.map(\.currentRPM)
         let legs = engine.fans.compactMap { engine.dominantLeg[$0.index] }
